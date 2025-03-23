@@ -87,8 +87,7 @@ class DiffusionModule(nn.Module):
         # DO NOT change the code outside this part.
         # Compute xt.
         alphas_prod_t = extract(self.var_scheduler.alphas_cumprod, t, x0)
-        xt = x0
-
+        xt = torch.sqrt(alphas_prod_t) * x0 + torch.sqrt(1 - alphas_prod_t) * noise
         #######################
 
         return xt
@@ -110,13 +109,20 @@ class DiffusionModule(nn.Module):
         # compute x_t_prev.
         if isinstance(t, int):
             t = torch.tensor([t]).to(self.device)
-        eps_factor = (1 - extract(self.var_scheduler.alphas, t, xt)) / (
-            1 - extract(self.var_scheduler.alphas_cumprod, t, xt)
-        ).sqrt()
+        
+        alpha_t = extract(self.var_scheduler.alphas, t, xt)
+        alpha_cumprod_t = extract(self.var_scheduler.alphas_cumprod, t, xt)
+        sqrt_one_minus_alpha_cumprod = torch.sqrt(1 - alpha_cumprod_t)
+        
+        # Predict noise
         eps_theta = self.network(xt, t)
 
-        x_t_prev = xt
-
+        # Compute x_{t-1}
+        mean = (1 / torch.sqrt(alpha_t)) * (xt - ((1 - alpha_t) / sqrt_one_minus_alpha_cumprod) * eps_theta)
+        # Add noise term if t > 0
+        sigma_t = torch.sqrt(extract(self.var_scheduler.betas, t, xt))
+        z = torch.randn_like(xt)  # Random noise
+        x_t_prev = mean + (t > 0).float().view(-1, 1) * sigma_t * z
         #######################
         return x_t_prev
 
@@ -134,7 +140,10 @@ class DiffusionModule(nn.Module):
         # DO NOT change the code outside this part.
         # sample x0 based on Algorithm 2 of DDPM paper.
         x0_pred = torch.zeros(shape).to(self.device)
-
+        xt = torch.randn_like(x0_pred).to(self.device)
+        for t in self.var_scheduler.timesteps:
+            xt = self.p_sample(xt, t.to(self.device))
+        x0_pred = xt
         ######################
         return x0_pred
 
@@ -220,9 +229,14 @@ class DiffusionModule(nn.Module):
             .to(x0.device)
             .long()
         )
-
-        loss = x0.mean()
-
+        
+        noise = torch.randn_like(x0)
+        # Generate x_t using the forward diffusion process
+        xt = self.q_sample(x0, t, noise)
+        # Predict the noise using the model
+        noise_pred = self.network(xt, t)
+        # Compute the mean squared error between actual and predicted noise
+        loss = F.mse_loss(noise, noise_pred, reduction="mean")
         ######################
         return loss
 
