@@ -169,9 +169,17 @@ class DiffusionModule(nn.Module):
             alpha_prod_t_prev = extract(self.var_scheduler.alphas_cumprod, t_prev, xt)
         else:
             alpha_prod_t_prev = torch.ones_like(alpha_prod_t)
+        
+        eps_theta = self.network(xt, t)
+        pred_x0 = (xt - torch.sqrt(1 - alpha_prod_t) * eps_theta) / torch.sqrt(alpha_prod_t)
+        direction_xt = torch.sqrt(alpha_prod_t_prev) * pred_x0
 
-        x_t_prev = xt
+        # Compute the stochastic part (noise term)
+        sigma_t = eta * torch.sqrt((1 - alpha_prod_t_prev) / (1 - alpha_prod_t)) * torch.sqrt(1 - alpha_prod_t / alpha_prod_t_prev)
+        noise = torch.randn_like(xt) if eta > 0 else torch.zeros_like(xt)
 
+        # Combine deterministic and stochastic parts
+        x_t_prev = direction_xt + torch.sqrt(1 - alpha_prod_t_prev - sigma_t**2) * eps_theta + sigma_t * noise
         ######################
         return x_t_prev
 
@@ -199,12 +207,14 @@ class DiffusionModule(nn.Module):
             .astype(np.int64)
         )
         timesteps = torch.from_numpy(timesteps)
+        timesteps = timesteps.to(self.device)
         prev_timesteps = timesteps - step_ratio
 
         xt = torch.zeros(shape).to(self.device)
+        xt = torch.randn_like(xt).to(self.device)
+        
         for t, t_prev in zip(timesteps, prev_timesteps):
-            pass
-
+            xt = self.ddim_p_sample(xt, t, t_prev=t_prev, eta=eta)
         x0_pred = xt
 
         ######################

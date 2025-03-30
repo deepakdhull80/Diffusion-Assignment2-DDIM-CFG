@@ -56,7 +56,10 @@ class DiffusionModule(nn.Module):
             # create a tensor of shape (2*batch_size,) where the first half is filled with zeros (i.e., null condition).
             assert class_label is not None
             assert len(class_label) == batch_size, f"len(class_label) != batch_size. {len(class_label)} != {batch_size}"
-            raise NotImplementedError("TODO")
+            if not isinstance(class_label, torch.Tensor):
+                class_label = torch.tensor(class_label).to(self.device)
+            null_condition = torch.zero_like(class_label)
+            class_label = torch.concat([null_condition, class_label], dim=0)
             #######################
 
         traj = [x_T]
@@ -65,7 +68,19 @@ class DiffusionModule(nn.Module):
             if do_classifier_free_guidance:
                 ######## TODO ########
                 # Assignment 2. Implement the classifier-free guidance.
-                raise NotImplementedError("TODO")
+                cond_noise_pred = self.network(
+                    x_t,
+                    timestep=t.to(self.device),
+                    class_label=class_label[batch_size:],
+                )
+                
+                null_noise_pred = self.network(
+                    x_t,
+                    timestep=t.to(self.device),
+                    class_label=class_label[:batch_size],
+                )
+                noise_pred = (1 + guidance_scale) * cond_noise_pred - guidance_scale * null_noise_pred
+                
                 #######################
             else:
                 noise_pred = self.network(

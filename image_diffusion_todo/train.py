@@ -27,7 +27,7 @@ def main(args):
     """config"""
     config = DotMap()
     config.update(vars(args))
-    config.device = f"cuda:{args.gpu}"
+    config.device = f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
 
     now = get_current_time()
     if args.use_cfg:

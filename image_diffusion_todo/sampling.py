@@ -12,7 +12,7 @@ def main(args):
     save_dir = Path(args.save_dir)
     save_dir.mkdir(exist_ok=True, parents=True)
 
-    device = f"cuda:{args.gpu}"
+    device = f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
 
     ddpm = DiffusionModule(None, None)
     ddpm.load(args.ckpt_path)
