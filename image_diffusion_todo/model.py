@@ -22,7 +22,7 @@ class DiffusionModule(nn.Module):
         if noise is None:
             noise = torch.randn_like(x0).to(x0.device)
         x_t, noise = self.var_scheduler.add_noise(x0, timestep, noise)
-        noise_p = self.network(x_t, timestep)
+        noise_p = self.network(x_t, timestep, class_label=class_label)
         
         loss = F.mse_loss(noise, noise_p, reduction='mean')
         ######################
@@ -58,8 +58,8 @@ class DiffusionModule(nn.Module):
             assert len(class_label) == batch_size, f"len(class_label) != batch_size. {len(class_label)} != {batch_size}"
             if not isinstance(class_label, torch.Tensor):
                 class_label = torch.tensor(class_label).to(self.device)
-            null_condition = torch.zero_like(class_label)
-            class_label = torch.concat([null_condition, class_label], dim=0)
+            null_condition = torch.zeros_like(class_label)
+            class_label = torch.cat([null_condition, class_label], dim=0)
             #######################
 
         traj = [x_T]
@@ -68,19 +68,23 @@ class DiffusionModule(nn.Module):
             if do_classifier_free_guidance:
                 ######## TODO ########
                 # Assignment 2. Implement the classifier-free guidance.
-                cond_noise_pred = self.network(
+                # Get conditional prediction (with class_label)
+                eps_cond = self.network(
                     x_t,
                     timestep=t.to(self.device),
                     class_label=class_label[batch_size:],
                 )
                 
-                null_noise_pred = self.network(
+                # Get unconditional prediction (null condition)
+                eps_uncond = self.network(
                     x_t,
                     timestep=t.to(self.device),
                     class_label=class_label[:batch_size],
                 )
-                noise_pred = (1 + guidance_scale) * cond_noise_pred - guidance_scale * null_noise_pred
                 
+                # Apply guidance formula from Algorithm 2
+                noise_pred = (1 + guidance_scale) * eps_cond - guidance_scale * eps_uncond
+                # noise_pred = eps_uncond + guidance_scale * (eps_cond - eps_uncond)
                 #######################
             else:
                 noise_pred = self.network(

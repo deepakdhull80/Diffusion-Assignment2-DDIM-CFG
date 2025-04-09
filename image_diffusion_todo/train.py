@@ -88,7 +88,7 @@ def main(args):
     losses = []
     with tqdm(initial=step, total=config.train_num_steps) as pbar:
         while step < config.train_num_steps:
-            if step % config.log_interval == 0:
+            if step % config.log_interval == 0 and step != 0:
                 ddpm.eval()
                 plt.plot(losses)
                 plt.savefig(f"{save_dir}/loss.png")
@@ -139,7 +139,7 @@ if __name__ == "__main__":
         help="the number of model training steps.",
     )
     parser.add_argument("--warmup_steps", type=int, default=200)
-    parser.add_argument("--log_interval", type=int, default=200)
+    parser.add_argument("--log_interval", type=int, default=5000)
     parser.add_argument(
         "--max_num_images_per_cat",
         type=int,

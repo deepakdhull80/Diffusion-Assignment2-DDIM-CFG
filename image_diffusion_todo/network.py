@@ -82,7 +82,8 @@ class UNet(nn.Module):
                 ######## TODO ########
                 # DO NOT change the code outside this part.
                 # Assignment 2-2. Implement random null conditioning in CFG training.
-                mask = (torch.rand_like(class_label) > self.cfg_dropout).int()
+                mask = (torch.randn(class_label.shape[0]) > self.cfg_dropout).int()
+                mask = mask.to(class_label.device)
                 class_label = class_label * mask
                 #######################
             
