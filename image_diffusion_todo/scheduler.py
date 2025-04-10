@@ -146,3 +146,96 @@ class DDPMScheduler(BaseScheduler):
         #######################
 
         return x_t, eps
+
+class DDIMScheduler(BaseScheduler):
+    def __init__(
+        self,
+        num_train_timesteps: int,
+        beta_1: float,
+        beta_T: float,
+        mode="linear",
+        sigma_type="small",
+    ):
+        super().__init__(num_train_timesteps, beta_1, beta_T, mode)
+    
+        # sigmas correspond to $\sigma_t$ in the DDPM paper.
+        self.sigma_type = sigma_type
+        if sigma_type == "small":
+            # when $\sigma_t^2 = \tilde{\beta}_t$.
+            alphas_cumprod_t_prev = torch.cat(
+                [torch.tensor([1.0]), self.alphas_cumprod[:-1]]
+            )
+            sigmas = (
+                (1 - alphas_cumprod_t_prev) / (1 - self.alphas_cumprod) * self.betas
+            ) ** 0.5
+        elif sigma_type == "large":
+            # when $\sigma_t^2 = \beta_t$.
+            sigmas = self.betas ** 0.5
+
+        self.register_buffer("sigmas", sigmas)
+
+    def step(self, xt: torch.Tensor, t: int, t_prev: int, eps_theta: torch.Tensor, eta=0.0):
+        """
+
+        Input:
+            xt (`torch.Tensor [B,C,H,W]`): samples at arbitrary timestep t.
+            t (`int`): current timestep in a reverse process.
+            t_prev (`torch.Tensor`): next timestep in a reverse process (=\tau_{i-1})
+            eps_theta (`torch.Tensor [B,C,H,W]`): predicted noise from a learned model.
+            eta (float): correspond to η in DDIM which controls the stochasticity of a reverse process.
+        Ouptut:
+            sample_prev (`torch.Tensor [B,C,H,W]`): one step denoised sample. (= x_{t-1})
+        """
+        alpha_prod_t = extract(self.alphas_cumprod, xt, t)
+        if t_prev >= 0:
+            alpha_prod_t_prev = extract(self.alphas_cumprod, xt, t_prev)
+        else:
+            alpha_prod_t_prev = torch.ones_like(alpha_prod_t)
+        
+        pred_x0 = (xt - torch.sqrt(1 - alpha_prod_t) * eps_theta) / torch.sqrt(alpha_prod_t)
+        direction_xt = torch.sqrt(alpha_prod_t_prev) * pred_x0
+
+        # Compute the stochastic part (noise term)
+        sigma_t = eta * torch.sqrt((1 - alpha_prod_t_prev) / (1 - alpha_prod_t)) * torch.sqrt(1 - alpha_prod_t / alpha_prod_t_prev)
+        noise = torch.randn_like(xt) if eta > 0 else torch.zeros_like(xt)
+
+        # Combine deterministic and stochastic parts
+        x_t_prev = direction_xt + torch.sqrt(1 - alpha_prod_t_prev - sigma_t**2) * eps_theta + sigma_t * noise
+        ######################
+        return x_t_prev
+    
+    # https://nn.labml.ai/diffusion/ddpm/utils.html
+    def _get_teeth(self, consts: torch.Tensor, t: torch.Tensor): # get t th const 
+        const = consts.gather(-1, t)
+        return const.reshape(-1, 1, 1, 1)
+    
+    def add_noise(
+        self,
+        x_0: torch.Tensor,
+        t: torch.IntTensor,
+        eps: Optional[torch.Tensor] = None,
+    ):
+        """
+        A forward pass of a Markov chain, i.e., q(x_t | x_0).
+
+        Input:
+            x_0 (`torch.Tensor [B,C,H,W]`): samples from a real data distribution q(x_0).
+            t: (`torch.IntTensor [B]`)
+            eps: (`torch.Tensor [B,C,H,W]`, optional): if None, randomly sample Gaussian noise in the function.
+        Output:
+            x_t: (`torch.Tensor [B,C,H,W]`): noisy samples at timestep t.
+            eps: (`torch.Tensor [B,C,H,W]`): injected noise.
+        """
+        
+        if eps is None:
+            eps = torch.randn(x_0.shape, device=x_0.device)
+
+        ######## TODO ########
+        # DO NOT change the code outside this part.
+        # Assignment 1. Implement the DDPM forward step.
+        
+        alphas_cumprod = extract(self.alphas_cumprod, x_0, t)
+        x_t = torch.sqrt(alphas_cumprod) * x_0 + torch.sqrt(1 - alphas_cumprod) * eps
+        #######################
+
+        return x_t, eps

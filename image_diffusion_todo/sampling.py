@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from dataset import tensor_to_pil_image
 from model import DiffusionModule
-from scheduler import DDPMScheduler
+from scheduler import DDPMScheduler, DDIMScheduler
 from pathlib import Path
 
 
@@ -20,13 +20,19 @@ def main(args):
     ddpm = ddpm.to(device)
 
     num_train_timesteps = ddpm.var_scheduler.num_train_timesteps
-    ddpm.var_scheduler = DDPMScheduler(
+    # ddpm.var_scheduler = DDPMScheduler(
+    #     num_train_timesteps,
+    #     beta_1=1e-4,
+    #     beta_T=0.02,
+    #     mode="linear",
+    # ).to(device)
+    ddpm.var_scheduler = DDIMScheduler(
         num_train_timesteps,
         beta_1=1e-4,
         beta_T=0.02,
         mode="linear",
     ).to(device)
-
+    
     total_num_samples = 500
     num_batches = int(np.ceil(total_num_samples / args.batch_size))
 
@@ -37,13 +43,13 @@ def main(args):
 
         if args.use_cfg:  # Enable CFG sampling
             assert ddpm.network.use_cfg, f"The model was not trained to support CFG."
-            samples = ddpm.sample(
+            samples = ddpm.ddim_sample(
                 B,
                 class_label=torch.randint(1, 4, (B,)).to(device),
                 guidance_scale=args.cfg_scale,
             )
         else:
-            samples = ddpm.sample(
+            samples = ddpm.ddim_sample(
                 B,
                 class_label=torch.randint(1, 4, (B,)).to(device),
                 guidance_scale=0.0,
